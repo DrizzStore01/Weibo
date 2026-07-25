@@ -49,6 +49,15 @@
     return "/api/image?" + params.toString();
   }
 
+  // Video dari weibocdn.com juga kena hotlink protection — alihkan lewat proxy backend.
+  function proxyVideo(url, download) {
+    if (!url) return url;
+    if (!/weibocdn\.com/i.test(url)) return url;
+    const params = new URLSearchParams({ url });
+    if (download) params.set("download", "1");
+    return "/api/video?" + params.toString();
+  }
+
   function avatarPlaceholder(name) {
     const letter = ((name || "?").trim().charAt(0) || "?").toUpperCase();
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" rx="32" fill="#8B5CF6"/><text x="32" y="42" font-family="Plus Jakarta Sans, sans-serif" font-size="28" font-weight="700" fill="#ffffff" text-anchor="middle">${letter}</text></svg>`;
@@ -470,7 +479,7 @@
       video.className = "modal-video";
       video.controls = true;
       video.setAttribute("referrerpolicy", "no-referrer");
-      video.src = post.videoSources[0].url;
+      video.src = proxyVideo(post.videoSources[0].url);
       if (post.videoCover) video.poster = proxyImage(post.videoCover);
       modalBody.appendChild(video);
 
@@ -484,7 +493,7 @@
       const list = document.createElement("div");
       list.className = "download-list";
       post.videoSources.forEach((src) => {
-        list.appendChild(downloadItem(`Video (${src.label})`, src.url));
+        list.appendChild(downloadItem(`Video (${src.label})`, proxyVideo(src.url, true)));
       });
       modalBody.appendChild(list);
     } else if (post.pics.length) {
