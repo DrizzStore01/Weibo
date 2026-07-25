@@ -21,10 +21,21 @@
     return String(n);
   }
 
-  function formatDate(raw) {
-    if (!raw) return "";
-    const d = new Date(raw);
-    if (isNaN(d.getTime())) return raw; // biarkan apa adanya kalau formatnya nonstandar
+  // Format asli dari API: "Sun Nov 19 22:58:58 +0800 2023"
+  function parseWeiboDate(raw) {
+    if (!raw) return null;
+    const m = /^\w+\s+(\w+)\s+(\d{1,2})\s+(\d{2}:\d{2}:\d{2})\s+([+-]\d{4})\s+(\d{4})$/.exec(raw.trim());
+    if (m) {
+      const [, month, day, time, offset, year] = m;
+      const d = new Date(`${month} ${day} ${year} ${time} GMT${offset}`);
+      if (!isNaN(d.getTime())) return d;
+    }
+    const fallback = new Date(raw);
+    return isNaN(fallback.getTime()) ? null : fallback;
+  }
+
+  function formatDate(d) {
+    if (!d) return "";
     return d.toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" });
   }
 
@@ -42,97 +53,82 @@
   }
 
   /* ---------------------------------------------------------
-     Normalisasi respons Weibo (bentuk API pihak ketiga tidak
-     didokumentasikan penuh, jadi kode ini defensif: mencoba
-     beberapa kemungkinan struktur field yang lazim dipakai
-     wrapper m.weibo.cn).
+     Normalisasi respons alwayscodex.
+
+     Bentuk asli (dikonfirmasi dari respons nyata API):
+     {
+       attribution, mode, status, timestamp,
+       result: <item> untuk mode=detail, atau <item[]> untuk mode=home/search
+     }
+     item = {
+       id, created_at, location, device,
+       author: { id, name, avatar, description, followers, verified_reason },
+       content: { text, is_repost },
+       media: { type, images: [url...], video: { cover_url, duration_str,
+                 duration_seconds, views, mp4_720p, mp4_hd, mp4_ld, mp4_url,
+                 original_page } },
+       stats: { reposts, comments, likes },
+       original_post_url
+     }
      --------------------------------------------------------- */
-  function pick(obj, paths, fallback) {
-    for (const path of paths) {
-      const val = path.split(".").reduce((o, k) => (o == null ? undefined : o[k]), obj);
-      if (val !== undefined && val !== null && val !== "") return val;
-    }
-    return fallback;
-  }
-
-  // Mengambil daftar "mblog" (unit postingan) dari respons home/search
   function extractMblogList(json) {
-    const data = json && json.data;
-    if (!data) return [];
-
-    let rawList = [];
-    if (Array.isArray(data)) {
-      rawList = data;
-    } else if (Array.isArray(data.cards)) {
-      rawList = data.cards;
-    } else if (Array.isArray(data.statuses)) {
-      rawList = data.statuses;
-    } else if (Array.isArray(data.list)) {
-      rawList = data.list;
-    } else if (Array.isArray(data.results)) {
-      rawList = data.results;
-    }
-
-    const mblogs = [];
-    for (const item of rawList) {
-      if (!item) continue;
-      if (item.mblog) {
-        mblogs.push(item.mblog);
-      } else if (Array.isArray(item.card_group)) {
-        for (const g of item.card_group) {
-          if (g && g.mblog) mblogs.push(g.mblog);
-        }
-      } else if (item.id || item.text || item.user) {
-        mblogs.push(item);
-      }
-    }
-    return mblogs;
+    const result = json && json.result;
+    if (Array.isArray(result)) return result;
+    if (result && Array.isArray(result.list)) return result.list;
+    if (result && Array.isArray(result.items)) return result.items;
+    return [];
   }
 
-  // Mengambil satu "mblog" dari respons detail
   function extractSingleMblog(json) {
-    const data = json && json.data;
-    if (!data) return null;
-    if (data.mblog) return data.mblog;
-    if (data.status) return data.status;
-    if (data.id || data.text) return data;
-    return null;
+    const result = json && json.result;
+    if (!result) return null;
+    if (Array.isArray(result)) return result[0] || null;
+    return result;
   }
 
-  function normalizeMblog(m) {
-    const user = m.user || m.author || {};
-    const picsRaw = m.pics || m.pic_ids && [] || [];
-    const pics = Array.isArray(picsRaw)
-      ? picsRaw.map((p) => {
-          if (typeof p === "string") return { thumb: p, large: p };
-          const large = pick(p, ["large.url", "url", "pic_big", "big_url"], p.url);
-          const thumb = pick(p, ["url", "thumbnail", "pic"], large);
-          return { thumb, large };
-        })
-      : [];
+  function normalizeMblog(item) {
+    const author = item.author || {};
+    const content = item.content || {};
+    const media = item.media || {};
+    const video = media.video || {};
+    const stats = item.stats || {};
 
-    const pageInfo = m.page_info || {};
-    const mediaInfo = pageInfo.media_info || {};
-    const isVideo = pageInfo.type === "video" || !!mediaInfo.stream_url || !!m.video_url;
+    const images = Array.isArray(media.images) ? media.images : [];
+    const pics = images.map((url) => ({ thumb: url, large: url }));
 
+    const isVideo = media.type === "video" || !!video.mp4_url || !!video.mp4_hd;
+
+    const candidates = [
+      { label: "720p", url: video.mp4_720p },
+      { label: "HD", url: video.mp4_hd },
+      { label: "SD", url: video.mp4_ld },
+      { label: "Video", url: video.mp4_url },
+    ].filter((v) => v.url);
+    const seen = new Set();
     const videoSources = [];
-    if (mediaInfo.stream_url_hd) videoSources.push({ label: "HD", url: mediaInfo.stream_url_hd });
-    if (mediaInfo.stream_url) videoSources.push({ label: "SD", url: mediaInfo.stream_url });
-    if (m.video_url && !videoSources.length) videoSources.push({ label: "Video", url: m.video_url });
+    candidates.forEach((v) => {
+      if (!seen.has(v.url)) { seen.add(v.url); videoSources.push(v); }
+    });
+    if (videoSources.length === 1) videoSources[0].label = "Kualitas terbaik";
 
     return {
-      id: pick(m, ["id", "idstr", "mid"], ""),
-      name: pick(user, ["screen_name", "name", "nickname"], "Tanpa nama"),
-      avatar: pick(user, ["profile_image_url", "avatar_hd", "avatar_large", "avatar"], ""),
-      date: pick(m, ["created_at", "created_time", "date"], ""),
-      text: stripHtml(pick(m, ["text", "text_raw", "content"], "")),
+      id: item.id || "",
+      name: author.name || "Tanpa nama",
+      avatar: author.avatar || "",
+      verified: !!author.verified_reason,
+      date: parseWeiboDate(item.created_at),
+      location: item.location || "",
+      text: stripHtml(content.text || ""),
       pics,
       isVideo,
       videoSources,
-      videoCover: pick(pageInfo, ["page_pic.url", "page_pic", "pic.url"], pics[0] ? pics[0].thumb : ""),
-      reposts: pick(m, ["reposts_count"], 0),
-      comments: pick(m, ["comments_count"], 0),
-      likes: pick(m, ["attitudes_count"], 0),
+      videoCover: video.cover_url || (pics[0] && pics[0].thumb) || "",
+      durationStr: video.duration_str || "",
+      views: video.views || "",
+      reposts: stats.reposts || 0,
+      comments: stats.comments || 0,
+      likes: stats.likes || 0,
+      originalUrl: item.original_post_url || "",
     };
   }
 
@@ -144,7 +140,6 @@
     page: 1,
     sinceId: "0",
     keyword: "",
-    detailTarget: "", // id atau url
     loading: false,
   };
 
@@ -253,8 +248,13 @@
 
       clearSkeletons();
 
-      if (!res.ok || json.ok === false) {
+      // Error dari backend Flask kita sendiri (400/502/504) -> bentuk {ok:false, error}
+      if (!res.ok) {
         throw new Error(json.error || "Gagal memuat data.");
+      }
+      // Kegagalan logis dari API upstream walau HTTP 200 -> bentuk {status:false, ...}
+      if (json.status === false) {
+        throw new Error(json.message || json.error || "Tidak ada hasil untuk permintaan ini.");
       }
 
       const list = extractMblogList(json).map(normalizeMblog);
@@ -266,7 +266,7 @@
         loadMoreBtn.hidden = true;
       } else {
         list.forEach(renderCard);
-        loadMoreBtn.hidden = list.length < 5; // heuristik: kalau hasil sedikit, kemungkinan sudah halaman terakhir
+        loadMoreBtn.hidden = list.length < 5; // heuristik: hasil sedikit -> kemungkinan halaman terakhir
       }
     } catch (err) {
       clearSkeletons();
@@ -315,7 +315,7 @@
   function renderErrorState(message) {
     const div = document.createElement("div");
     div.className = "error-state";
-    div.innerHTML = `<h3>Gagal memuat</h3><p>${message ? "" : ""}</p>`;
+    div.innerHTML = "<h3>Gagal memuat</h3><p></p>";
     div.querySelector("p").textContent = message || "Terjadi kesalahan. Coba muat ulang.";
     cardGrid.appendChild(div);
   }
@@ -333,14 +333,21 @@
     } else {
       mediaWrap.setAttribute("data-empty", "");
     }
-    if (post.isVideo) badge.hidden = false;
+    if (post.isVideo) {
+      badge.hidden = false;
+      badge.textContent = post.durationStr ? `Video · ${post.durationStr}` : "Video";
+    }
 
     const avatar = $(".post-card__avatar", node);
     if (post.avatar) avatar.src = post.avatar;
     avatar.alt = post.name;
 
-    $(".post-card__name", node).textContent = post.name;
-    $(".post-card__date", node).textContent = formatDate(post.date);
+    const nameEl = $(".post-card__name", node);
+    nameEl.textContent = post.name + (post.verified ? " ✓" : "");
+    if (post.verified) nameEl.title = "Akun terverifikasi";
+
+    const dateParts = [formatDate(post.date), post.location].filter(Boolean);
+    $(".post-card__date", node).textContent = dateParts.join(" · ");
     $(".post-card__text", node).textContent = post.text || "(tanpa teks)";
 
     $(".post-card__stat--repost", node).textContent = "↻ " + formatCount(post.reposts);
@@ -372,8 +379,6 @@
     overlay.hidden = false;
     modalBody.innerHTML = '<div class="skeleton skeleton--line skeleton--w60"></div><div class="skeleton skeleton--media" style="margin-top:12px"></div>';
 
-    // Kalau kartu sudah punya data lengkap dan bukan hasil klik link/ID manual, bisa langsung tampil,
-    // tapi kita tetap fetch ulang mode=detail supaya dapat link unduhan resolusi penuh.
     const params = new URLSearchParams({ mode: "detail" });
     if (url) params.set("url", url);
     else if (id) params.set("id", id);
@@ -381,7 +386,8 @@
     try {
       const res = await fetch("/api/weibo?" + params.toString());
       const json = await res.json();
-      if (!res.ok || json.ok === false) throw new Error(json.error || "Gagal memuat detail postingan.");
+      if (!res.ok) throw new Error(json.error || "Gagal memuat detail postingan.");
+      if (json.status === false) throw new Error(json.message || json.error || "Postingan tidak ditemukan.");
 
       const raw = extractSingleMblog(json);
       const post = raw ? normalizeMblog(raw) : preloaded;
@@ -393,7 +399,8 @@
         renderModal(preloaded, null);
         showAlert("Menampilkan data ringkas — detail lengkap gagal dimuat: " + err.message, "warning");
       } else {
-        modalBody.innerHTML = `<div class="error-state"><h3>Gagal memuat</h3><p>${err.message || "Terjadi kesalahan."}</p></div>`;
+        modalBody.innerHTML = `<div class="error-state"><h3>Gagal memuat</h3><p>${""}</p></div>`;
+        modalBody.querySelector("p").textContent = err.message || "Terjadi kesalahan.";
       }
     }
   }
@@ -409,8 +416,9 @@
         <div class="modal-user__name"></div>
         <div class="modal-user__date"></div>
       </div>`;
-    userRow.querySelector(".modal-user__name").textContent = post.name;
-    userRow.querySelector(".modal-user__date").textContent = formatDate(post.date);
+    userRow.querySelector(".modal-user__name").textContent = post.name + (post.verified ? " ✓" : "");
+    const dateParts = [formatDate(post.date), post.location].filter(Boolean);
+    userRow.querySelector(".modal-user__date").textContent = dateParts.join(" · ");
     modalBody.appendChild(userRow);
 
     const textEl = document.createElement("p");
@@ -425,6 +433,13 @@
       video.src = post.videoSources[0].url;
       if (post.videoCover) video.poster = post.videoCover;
       modalBody.appendChild(video);
+
+      if (post.durationStr || post.views) {
+        const meta = document.createElement("p");
+        meta.style.cssText = "font-size:12.5px;color:var(--text-tertiary);margin:-8px 0 0;";
+        meta.textContent = [post.durationStr, post.views].filter(Boolean).join(" · ");
+        modalBody.appendChild(meta);
+      }
 
       const list = document.createElement("div");
       list.className = "download-list";
@@ -455,6 +470,17 @@
       empty.style.fontSize = "13.6px";
       empty.textContent = "Postingan ini tidak punya media untuk diunduh.";
       modalBody.appendChild(empty);
+    }
+
+    if (post.originalUrl) {
+      const link = document.createElement("a");
+      link.href = post.originalUrl;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.className = "raw-json-toggle";
+      link.style.textDecoration = "underline";
+      link.textContent = "Lihat postingan asli di Weibo ↗";
+      modalBody.appendChild(link);
     }
 
     if (rawJson) {
