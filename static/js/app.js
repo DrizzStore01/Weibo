@@ -357,6 +357,7 @@
     if (thumbUrl) {
       thumb.src = thumbUrl;
       thumb.alt = post.text ? post.text.slice(0, 80) : "Media Weibo";
+      thumb.onerror = () => { mediaWrap.setAttribute("data-empty", ""); thumb.onerror = null; };
     } else {
       mediaWrap.setAttribute("data-empty", "");
     }
@@ -368,6 +369,7 @@
     const avatar = $(".post-card__avatar", node);
     avatar.src = post.avatar || avatarPlaceholder(post.name);
     avatar.alt = post.name;
+    avatar.onerror = () => { avatar.onerror = null; avatar.src = avatarPlaceholder(post.name); };
 
     const nameEl = $(".post-card__name", node);
     nameEl.textContent = post.name + (post.verified ? " ✓" : "");
@@ -438,7 +440,7 @@
     const userRow = document.createElement("div");
     userRow.className = "modal-user";
     userRow.innerHTML = `
-      <img class="modal-user__avatar" src="${post.avatar || avatarPlaceholder(post.name)}" alt="">
+      <img class="modal-user__avatar" src="${post.avatar || avatarPlaceholder(post.name)}" alt="" referrerpolicy="no-referrer" onerror="this.onerror=null;this.src='${avatarPlaceholder(post.name)}'">
       <div>
         <div class="modal-user__name"></div>
         <div class="modal-user__date"></div>
@@ -457,6 +459,7 @@
       const video = document.createElement("video");
       video.className = "modal-video";
       video.controls = true;
+      video.setAttribute("referrerpolicy", "no-referrer");
       video.src = post.videoSources[0].url;
       if (post.videoCover) video.poster = post.videoCover;
       modalBody.appendChild(video);
@@ -481,6 +484,8 @@
         const img = document.createElement("img");
         img.src = p.thumb;
         img.alt = "";
+        img.referrerPolicy = "no-referrer";
+        img.onerror = () => { img.style.display = "none"; };
         grid.appendChild(img);
       });
       modalBody.appendChild(grid);
