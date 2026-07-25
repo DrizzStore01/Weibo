@@ -6,7 +6,8 @@ API key/endpoint asli tidak perlu diekspos langsung ke client.
 """
 import os
 import requests
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, Response
+from urllib.parse import urlparse
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -36,6 +37,51 @@ UPSTREAM_HEADERS = {
 @app.route("/")
 def home():
     return render_template("index.html")
+
+
+@app.route("/api/image")
+def image_proxy():
+    """
+    Proxy untuk gambar dari CDN Weibo (sinaimg.cn) yang menerapkan hotlink
+    protection berbasis Referer whitelist. Server kita yang mengambil
+    gambarnya (dengan Referer yang sah), lalu meneruskan bytes-nya ke
+    browser — supaya <img> di halaman kita bisa menampilkannya.
+
+    Query params:
+      - url: URL gambar asli (wajib)
+      - download: "1" untuk memaksa unduhan (Content-Disposition: attachment)
+    """
+    url = request.args.get("url", "").strip()
+    if not url:
+        return jsonify({"ok": False, "error": "Parameter 'url' wajib diisi."}), 400
+
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    allowed = parsed.scheme == "https" and (host == "sinaimg.cn" or host.endswith(".sinaimg.cn"))
+    if not allowed:
+        return jsonify({"ok": False, "error": "Domain gambar tidak diizinkan."}), 400
+
+    try:
+        upstream = requests.get(
+            url,
+            headers={
+                "Referer": "https://weibo.com/",
+                "User-Agent": UPSTREAM_HEADERS["User-Agent"],
+                "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+            },
+            timeout=REQUEST_TIMEOUT,
+        )
+        upstream.raise_for_status()
+    except requests.exceptions.RequestException:
+        return jsonify({"ok": False, "error": "Gagal mengambil gambar dari sumber."}), 502
+
+    content_type = upstream.headers.get("Content-Type", "image/jpeg")
+    resp = Response(upstream.content, content_type=content_type)
+    resp.headers["Cache-Control"] = "public, max-age=86400"
+    if request.args.get("download") == "1":
+        filename = os.path.basename(parsed.path) or "weibo-image.jpg"
+        resp.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return resp
 
 
 @app.route("/api/weibo")
