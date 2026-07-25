@@ -31,21 +31,43 @@ static/css/style.css-> seluruh design token dari DESIGN.md
 static/js/app.js    -> fetch data, render kartu, modal detail, smart search
 ```
 
-## ⚠️ Catatan penting soal bentuk data API
+## Bentuk data API (sudah terkonfirmasi)
 
-Saya tidak punya akses internet di lingkungan kerja saat membuat proyek
-ini, jadi saya **tidak bisa memanggil API alwayscodex secara langsung**
-untuk melihat bentuk JSON aslinya. Kode di `static/js/app.js`
-(fungsi `extractMblogList`, `extractSingleMblog`, `normalizeMblog`)
-ditulis defensif — mencoba beberapa struktur field yang lazim dipakai
-wrapper `m.weibo.cn` (mis. `data.cards[].mblog`, `data.statuses[]`,
-field seperti `pics`, `page_info.media_info.stream_url`, dst).
+```
+{
+  attribution, mode, status, timestamp,
+  result: <item>      // mode=detail
+  result: <item[]>    // mode=home / mode=search (asumsi, belum ada contoh nyata)
+}
 
-Kalau setelah dicoba ternyata field-nya beda dari yang saya tebak:
-1. Buka modal detail sebuah postingan, klik **"Lihat data mentah (debug)"**
-   untuk melihat JSON asli dari API.
-2. Kirim contoh JSON itu ke saya (atau tempel di sini), saya sesuaikan
-   fungsi parsing-nya.
+item = {
+  id, created_at, location, device,
+  author: { id, name, avatar, description, followers, verified_reason },
+  content: { text, is_repost },
+  media: {
+    type,              // "video" | dll
+    images: [url, ...],
+    video: {
+      cover_url, duration_str, duration_seconds, views,
+      mp4_720p, mp4_hd, mp4_ld, mp4_url, original_page
+    }
+  },
+  stats: { reposts, comments, likes },
+  original_post_url
+}
+```
+
+Catatan: field `mp4_720p` / `mp4_hd` / `mp4_ld` / `mp4_url` kadang berisi
+URL yang **sama persis** — `app.js` sudah menghilangkan duplikatnya
+otomatis (fungsi `normalizeMblog`) supaya tidak ada tombol unduh ganda.
+Link video juga signed URL dengan masa berlaku terbatas (`Expires=...`),
+makanya modal detail selalu fetch ulang `mode=detail` saat sebuah kartu
+diklik, bukan memakai data dari list yang mungkin sudah agak lama.
+
+Kalau ternyata `mode=home`/`mode=search` punya bentuk `result` yang beda
+(bukan array langsung), kirim contoh JSON mentahnya (lewat tombol
+**"Lihat data mentah (debug)"** di modal, atau screenshot) dan saya
+sesuaikan `extractMblogList` di `static/js/app.js`.
 
 ## Fitur
 
