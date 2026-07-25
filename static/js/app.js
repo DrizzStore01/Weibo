@@ -39,6 +39,16 @@
     return d.toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" });
   }
 
+  // Gambar dari sinaimg.cn diblokir kalau di-embed langsung dari domain lain
+  // (hotlink protection). Alihkan lewat proxy backend kita.
+  function proxyImage(url, download) {
+    if (!url) return url;
+    if (!/sinaimg\.cn/i.test(url)) return url; // domain lain (mis. weibocdn.com) biarkan langsung
+    const params = new URLSearchParams({ url });
+    if (download) params.set("download", "1");
+    return "/api/image?" + params.toString();
+  }
+
   function avatarPlaceholder(name) {
     const letter = ((name || "?").trim().charAt(0) || "?").toUpperCase();
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" rx="32" fill="#8B5CF6"/><text x="32" y="42" font-family="Plus Jakarta Sans, sans-serif" font-size="28" font-weight="700" fill="#ffffff" text-anchor="middle">${letter}</text></svg>`;
@@ -355,7 +365,7 @@
 
     const thumbUrl = post.isVideo ? post.videoCover : (post.pics[0] && post.pics[0].thumb);
     if (thumbUrl) {
-      thumb.src = thumbUrl;
+      thumb.src = proxyImage(thumbUrl);
       thumb.alt = post.text ? post.text.slice(0, 80) : "Media Weibo";
       thumb.onerror = () => { mediaWrap.setAttribute("data-empty", ""); thumb.onerror = null; };
     } else {
@@ -367,7 +377,7 @@
     }
 
     const avatar = $(".post-card__avatar", node);
-    avatar.src = post.avatar || avatarPlaceholder(post.name);
+    avatar.src = post.avatar ? proxyImage(post.avatar) : avatarPlaceholder(post.name);
     avatar.alt = post.name;
     avatar.onerror = () => { avatar.onerror = null; avatar.src = avatarPlaceholder(post.name); };
 
@@ -440,7 +450,7 @@
     const userRow = document.createElement("div");
     userRow.className = "modal-user";
     userRow.innerHTML = `
-      <img class="modal-user__avatar" src="${post.avatar || avatarPlaceholder(post.name)}" alt="" referrerpolicy="no-referrer" onerror="this.onerror=null;this.src='${avatarPlaceholder(post.name)}'">
+      <img class="modal-user__avatar" src="${post.avatar ? proxyImage(post.avatar) : avatarPlaceholder(post.name)}" alt="" referrerpolicy="no-referrer" onerror="this.onerror=null;this.src='${avatarPlaceholder(post.name)}'">
       <div>
         <div class="modal-user__name"></div>
         <div class="modal-user__date"></div>
@@ -461,7 +471,7 @@
       video.controls = true;
       video.setAttribute("referrerpolicy", "no-referrer");
       video.src = post.videoSources[0].url;
-      if (post.videoCover) video.poster = post.videoCover;
+      if (post.videoCover) video.poster = proxyImage(post.videoCover);
       modalBody.appendChild(video);
 
       if (post.durationStr || post.views) {
@@ -482,7 +492,7 @@
       grid.className = "modal-media-grid";
       post.pics.forEach((p) => {
         const img = document.createElement("img");
-        img.src = p.thumb;
+        img.src = proxyImage(p.thumb);
         img.alt = "";
         img.referrerPolicy = "no-referrer";
         img.onerror = () => { img.style.display = "none"; };
@@ -493,7 +503,7 @@
       const list = document.createElement("div");
       list.className = "download-list";
       post.pics.forEach((p, i) => {
-        list.appendChild(downloadItem(`Foto ${i + 1}`, p.large || p.thumb));
+        list.appendChild(downloadItem(`Foto ${i + 1}`, proxyImage(p.large || p.thumb, true)));
       });
       modalBody.appendChild(list);
     } else {
