@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WeiDL — Unduh Video &amp; Foto Weibo</title>
+<meta name="description" content="Jelajahi postingan trending Weibo, cari topik, dan unduh video maupun foto langsung tanpa watermark tambahan.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+
+<a href="#konten" class="skip-link">Langsung ke konten</a>
+
+<header class="navbar" id="navbar">
+  <div class="container navbar__inner">
+    <a href="#top" class="brand">Wei<span>DL</span></a>
+
+    <nav class="nav-links" id="navLinks">
+      <a href="#top" class="nav-link">Beranda</a>
+      <a href="#trending" class="nav-link">Trending</a>
+      <a href="#top" class="nav-link nav-link--cta">Cari &amp; Unduh</a>
+    </nav>
+
+    <button class="icon-btn" id="menuToggle" aria-label="Buka menu" aria-expanded="false">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
+  </div>
+</header>
+
+<main id="konten">
+
+  <section class="hero" id="top">
+    <div class="container hero__inner">
+      <p class="eyebrow">Weibo, tanpa ribet</p>
+      <h1 class="h1">Tempel link, ketik kata kunci,<br class="br-desktop"> atau lihat yang lagi rame.</h1>
+      <p class="body-lg">WeiDL mengambil video dan foto langsung dari sumbernya — cukup satu kolom untuk mencari, atau tempel link/ID postingan untuk langsung diproses.</p>
+
+      <form class="smart-search" id="smartSearchForm" role="search">
+        <span class="smart-search__icon" id="smartSearchIcon" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        </span>
+        <input
+          type="text"
+          id="smartSearchInput"
+          class="smart-search__input"
+          placeholder="Kata kunci, link m.weibo.cn, atau ID postingan…"
+          autocomplete="off"
+          inputmode="search"
+        >
+        <button type="submit" class="btn btn--primary smart-search__btn">
+          <span class="btn-label-full">Proses</span>
+          <span class="btn-label-compact" aria-hidden="true">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+          </span>
+        </button>
+      </form>
+      <p class="smart-search__hint" id="smartSearchHint">Ketik apa saja — WeiDL otomatis mendeteksi apakah itu kata kunci atau link/ID postingan.</p>
+    </div>
+  </section>
+
+  <div class="alert-stack" id="alertStack" aria-live="polite"></div>
+
+  <section class="feed-section" id="trending">
+    <div class="container">
+      <div class="feed-header">
+        <div>
+          <h2 class="h2" id="feedTitle">Sedang Trending</h2>
+          <p class="feed-subtitle" id="feedSubtitle">Postingan yang lagi ramai dibicarakan di Weibo</p>
+        </div>
+        <button class="btn btn--secondary" id="refreshBtn" type="button">Muat Ulang</button>
+      </div>
+
+      <div class="card-grid" id="cardGrid" aria-live="polite"></div>
+
+      <div class="feed-footer">
+        <button class="btn btn--secondary" id="loadMoreBtn" type="button">Muat Lebih Banyak</button>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="footer">
+  <div class="container footer__inner">
+    <span class="brand brand--sm">Wei<span>DL</span></span>
+    <p class="footer__text">Semua konten milik pemilik akun masing-masing di Weibo. WeiDL cuma mempermudah proses unduh untuk pemakaian pribadi.</p>
+  </div>
+</footer>
+
+<!-- Modal detail postingan -->
+<div class="modal-overlay" id="modalOverlay" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalUserName">
+    <button class="icon-btn modal__close" id="modalClose" aria-label="Tutup">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+    <div class="modal__body" id="modalBody">
+      <!-- diisi via JS -->
+    </div>
+  </div>
+</div>
+
+<!-- Template kartu (dipakai berulang lewat JS) -->
+<template id="cardTemplate">
+  <article class="card post-card">
+    <button class="post-card__media-btn" type="button">
+      <div class="post-card__media">
+        <img class="post-card__thumb" alt="" loading="lazy">
+        <span class="post-card__badge" hidden>Video</span>
+      </div>
+    </button>
+    <div class="post-card__body">
+      <div class="post-card__user">
+        <img class="post-card__avatar" alt="" loading="lazy">
+        <div class="post-card__user-info">
+          <span class="post-card__name"></span>
+          <span class="post-card__date"></span>
+        </div>
+      </div>
+      <p class="post-card__text"></p>
+      <div class="post-card__stats">
+        <span class="post-card__stat post-card__stat--repost"></span>
+        <span class="post-card__stat post-card__stat--comment"></span>
+        <span class="post-card__stat post-card__stat--like"></span>
+      </div>
+      <button class="btn btn--primary post-card__cta" type="button">Lihat &amp; Unduh</button>
+    </div>
+  </article>
+</template>
+
+<!-- Template skeleton loading -->
+<template id="skeletonTemplate">
+  <div class="card skeleton-card" aria-hidden="true">
+    <div class="skeleton skeleton--media"></div>
+    <div class="skeleton-card__body">
+      <div class="skeleton skeleton--line skeleton--w60"></div>
+      <div class="skeleton skeleton--line skeleton--w80"></div>
+      <div class="skeleton skeleton--line skeleton--w40"></div>
+    </div>
+  </div>
+</template>
+
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
