@@ -39,6 +39,12 @@
     return d.toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" });
   }
 
+  function avatarPlaceholder(name) {
+    const letter = ((name || "?").trim().charAt(0) || "?").toUpperCase();
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" rx="32" fill="#8B5CF6"/><text x="32" y="42" font-family="Plus Jakarta Sans, sans-serif" font-size="28" font-weight="700" fill="#ffffff" text-anchor="middle">${letter}</text></svg>`;
+    return "data:image/svg+xml;utf8," + encodeURIComponent(svg);
+  }
+
   function showAlert(message, type) {
     const stack = $("#alertStack");
     const el = document.createElement("div");
@@ -72,6 +78,7 @@
      }
      --------------------------------------------------------- */
   function extractMblogList(json) {
+    if (Array.isArray(json && json.data)) return json.data;
     const result = json && json.result;
     if (Array.isArray(result)) return result;
     if (result && Array.isArray(result.list)) return result.list;
@@ -359,7 +366,7 @@
     }
 
     const avatar = $(".post-card__avatar", node);
-    if (post.avatar) avatar.src = post.avatar;
+    avatar.src = post.avatar || avatarPlaceholder(post.name);
     avatar.alt = post.name;
 
     const nameEl = $(".post-card__name", node);
@@ -431,7 +438,7 @@
     const userRow = document.createElement("div");
     userRow.className = "modal-user";
     userRow.innerHTML = `
-      <img class="modal-user__avatar" src="${post.avatar || ""}" alt="">
+      <img class="modal-user__avatar" src="${post.avatar || avatarPlaceholder(post.name)}" alt="">
       <div>
         <div class="modal-user__name"></div>
         <div class="modal-user__date"></div>
