@@ -19,6 +19,19 @@ app = Flask(
 UPSTREAM_URL = "https://api.alwayscodex.my.id/api/downloader/weibo"
 REQUEST_TIMEOUT = 15  # detik
 
+# Beberapa API scraping menolak request yang User-Agent-nya kelihatan
+# seperti bot/script (mis. "python-requests/x.x" bawaan library requests).
+# Header ini bikin request kita "menyamar" seperti dari browser mobile.
+UPSTREAM_HEADERS = {
+    "Content-Type": "application/json",
+    "User-Agent": (
+        "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
+    ),
+    "Referer": "https://m.weibo.cn/",
+    "Accept": "application/json, text/plain, */*",
+}
+
 
 @app.route("/")
 def home():
@@ -68,13 +81,20 @@ def weibo_proxy():
         return jsonify({"ok": False, "error": f"Mode '{mode}' tidak dikenal."}), 400
 
     try:
-        upstream = requests.post(UPSTREAM_URL, json=payload, timeout=REQUEST_TIMEOUT)
+        upstream = requests.post(
+            UPSTREAM_URL, json=payload, headers=UPSTREAM_HEADERS, timeout=REQUEST_TIMEOUT
+        )
         upstream.raise_for_status()
         return jsonify(upstream.json())
     except requests.exceptions.Timeout:
         return jsonify({"ok": False, "error": "Server sumber terlalu lama merespons. Coba lagi."}), 504
     except requests.exceptions.HTTPError as e:
-        return jsonify({"ok": False, "error": f"Server sumber mengembalikan error ({e.response.status_code})."}), 502
+        body_preview = (e.response.text or "")[:300]
+        return jsonify({
+            "ok": False,
+            "error": f"Server sumber mengembalikan error ({e.response.status_code}).",
+            "detail": body_preview,
+        }), 502
     except (requests.exceptions.RequestException, ValueError) as e:
         return jsonify({"ok": False, "error": "Gagal menghubungi server sumber.", "detail": str(e)}), 502
 
