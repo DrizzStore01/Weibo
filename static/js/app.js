@@ -242,9 +242,10 @@
     if (state.mode === "home") params.set("since_id", state.sinceId);
     if (state.mode === "search") params.set("keyword", state.keyword);
 
+    let json;
     try {
       const res = await fetch("/api/weibo?" + params.toString());
-      const json = await res.json();
+      json = await res.json();
 
       clearSkeletons();
 
@@ -262,7 +263,7 @@
       if (reset) cardGrid.innerHTML = "";
 
       if (!list.length && reset) {
-        renderEmptyState();
+        renderEmptyState(json);
         loadMoreBtn.hidden = true;
       } else {
         list.forEach(renderCard);
@@ -270,7 +271,7 @@
       }
     } catch (err) {
       clearSkeletons();
-      if (reset) renderErrorState(err.message);
+      if (reset) renderErrorState(err.message, json);
       showAlert(err.message || "Terjadi kesalahan saat memuat data.", "error");
     } finally {
       state.loading = false;
@@ -306,18 +307,37 @@
     $$(".skeleton-card", cardGrid).forEach((n) => n.remove());
   }
 
-  function renderEmptyState() {
+  function attachRawJsonDebug(container, json) {
+    if (!json) return;
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "raw-json-toggle";
+    toggle.style.margin = "0 auto";
+    toggle.textContent = "Lihat data mentah (debug)";
+    const pre = document.createElement("pre");
+    pre.className = "raw-json";
+    pre.hidden = true;
+    pre.style.textAlign = "left";
+    pre.textContent = JSON.stringify(json, null, 2);
+    toggle.addEventListener("click", () => { pre.hidden = !pre.hidden; });
+    container.appendChild(toggle);
+    container.appendChild(pre);
+  }
+
+  function renderEmptyState(json) {
     const div = document.createElement("div");
     div.className = "empty-state";
     div.innerHTML = "<h3>Tidak ada hasil</h3><p>Coba kata kunci lain, atau tempel link postingan langsung.</p>";
     cardGrid.appendChild(div);
+    attachRawJsonDebug(div, json);
   }
-  function renderErrorState(message) {
+  function renderErrorState(message, json) {
     const div = document.createElement("div");
     div.className = "error-state";
     div.innerHTML = "<h3>Gagal memuat</h3><p></p>";
     div.querySelector("p").textContent = message || "Terjadi kesalahan. Coba muat ulang.";
     cardGrid.appendChild(div);
+    attachRawJsonDebug(div, json);
   }
 
   function renderCard(post) {
