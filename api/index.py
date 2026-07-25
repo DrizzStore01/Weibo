@@ -84,6 +84,95 @@ def image_proxy():
     return resp
 
 
+MAX_PROXY_VIDEO_BYTES = 4 * 1024 * 1024   # batas unduhan penuh sekali tarik (~4MB)
+VIDEO_CHUNK_BYTES = 2 * 1024 * 1024       # ukuran potongan saat streaming/playback (~2MB)
+VIDEO_REQUEST_TIMEOUT = 8  # detik, aman di bawah batas eksekusi function
+
+
+def _parse_range_start(range_header):
+    """Ambil offset awal dari header Range milik browser, mis. 'bytes=1048576-' -> 1048576."""
+    if not range_header or not range_header.startswith("bytes="):
+        return 0
+    spec = range_header[len("bytes="):].split(",")[0]
+    start_str = spec.split("-")[0].strip()
+    return int(start_str) if start_str.isdigit() else 0
+
+
+@app.route("/api/video")
+def video_proxy():
+    """
+    Proxy video dari weibocdn.com (kena hotlink protection serupa sinaimg.cn).
+
+    Untuk playback (tanpa ?download=1): selalu minta potongan kecil
+    (VIDEO_CHUNK_BYTES) ke upstream sesuai offset yang diminta <video>,
+    lalu teruskan sebagai 206 Partial Content. Dengan begini <video> akan
+    otomatis minta potongan berikutnya sendiri saat playback berjalan —
+    jadi TIDAK ada batas panjang video untuk pemutaran.
+
+    Untuk unduhan (?download=1): coba ambil file penuh, dibatasi
+    MAX_PROXY_VIDEO_BYTES supaya tidak melebihi batas respons hosting
+    serverless gratis.
+    """
+    url = request.args.get("url", "").strip()
+    if not url:
+        return jsonify({"ok": False, "error": "Parameter 'url' wajib diisi."}), 400
+
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    allowed = parsed.scheme == "https" and (host == "weibocdn.com" or host.endswith(".weibocdn.com"))
+    if not allowed:
+        return jsonify({"ok": False, "error": "Domain video tidak diizinkan."}), 400
+
+    is_download = request.args.get("download") == "1"
+    headers = {
+        "Referer": "https://weibo.com/",
+        "User-Agent": UPSTREAM_HEADERS["User-Agent"],
+    }
+
+    if not is_download:
+        start = _parse_range_start(request.headers.get("Range"))
+        headers["Range"] = f"bytes={start}-{start + VIDEO_CHUNK_BYTES - 1}"
+
+    try:
+        upstream = requests.get(url, headers=headers, timeout=VIDEO_REQUEST_TIMEOUT, stream=True)
+    except requests.exceptions.Timeout:
+        return jsonify({"ok": False, "error": "Server terlalu lama mengambil video. Coba \"Lihat postingan asli\" saja."}), 504
+    except requests.exceptions.RequestException:
+        return jsonify({"ok": False, "error": "Gagal mengambil video dari sumber."}), 502
+
+    if upstream.status_code not in (200, 206):
+        return jsonify({"ok": False, "error": f"Server sumber video menolak permintaan ({upstream.status_code})."}), 502
+
+    cap = MAX_PROXY_VIDEO_BYTES if is_download else (VIDEO_CHUNK_BYTES + 262144)
+    content = bytearray()
+    for chunk in upstream.iter_content(chunk_size=262144):
+        content.extend(chunk)
+        if len(content) >= cap:
+            break
+    upstream.close()
+
+    if is_download and len(content) >= MAX_PROXY_VIDEO_BYTES:
+        return jsonify({
+            "ok": False,
+            "error": "Video ini terlalu besar untuk diunduh lewat server (batas ~4MB di hosting gratis). Coba \"Lihat postingan asli di Weibo\" untuk unduh langsung.",
+        }), 413
+
+    resp = Response(
+        bytes(content),
+        status=upstream.status_code,
+        content_type=upstream.headers.get("Content-Type", "video/mp4"),
+    )
+    resp.headers["Accept-Ranges"] = "bytes"
+    if "Content-Range" in upstream.headers:
+        resp.headers["Content-Range"] = upstream.headers["Content-Range"]
+    resp.headers["Content-Length"] = str(len(content))
+    resp.headers["Cache-Control"] = "public, max-age=3600"
+    if is_download:
+        filename = os.path.basename(parsed.path) or "weibo-video.mp4"
+        resp.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return resp
+
+
 @app.route("/api/weibo")
 def weibo_proxy():
     """
