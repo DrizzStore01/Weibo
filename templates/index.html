@@ -67,12 +67,16 @@
     <div class="container">
       <div class="feed-header">
         <div>
-          <h2 class="h2" id="feedTitle">Sedang Trending</h2>
-          <p class="feed-subtitle" id="feedSubtitle">Postingan yang lagi ramai dibicarakan di Weibo</p>
+          <h2 class="h2" id="feedTitle">Donghua</h2>
+          <p class="feed-subtitle" id="feedSubtitle">Postingan donghua (国漫) yang lagi ramai di Weibo</p>
         </div>
-        <button class="btn btn--secondary" id="refreshBtn" type="button">Muat Ulang</button>
+        <button class="btn btn--secondary" id="refreshBtn" type="button" hidden>Muat Ulang</button>
       </div>
 
+      <div class="feed-tabs">
+        <button class="btn btn--secondary feed-tab is-active" id="tabDonghua" type="button">🎬 Donghua</button>
+        <button class="btn btn--secondary feed-tab" id="tabTrending" type="button">🔥 Trending Umum</button>
+      </div>
       <div class="card-grid" id="cardGrid" aria-live="polite"></div>
 
       <div class="feed-footer">
