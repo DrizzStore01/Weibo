@@ -161,11 +161,13 @@
   /* ---------------------------------------------------------
      State
      --------------------------------------------------------- */
+  const DONGHUA_KEYWORD = "国漫"; // istilah Weibo untuk animasi produksi Tiongkok (donghua)
+
   const state = {
-    mode: "home",
+    mode: "search",
     page: 1,
     sinceId: "0",
-    keyword: "",
+    keyword: DONGHUA_KEYWORD,
     loading: false,
   };
 
@@ -241,6 +243,7 @@
       state.mode = "search";
       state.keyword = raw;
       state.page = 1;
+      setActiveTab(null);
       feedTitle.textContent = `Hasil pencarian: "${raw}"`;
       feedSubtitle.textContent = "Postingan yang cocok dengan kata kunci kamu";
       loadFeed(true);
@@ -286,6 +289,11 @@
 
       const list = extractMblogList(json).map(normalizeMblog);
 
+      if (json._translated_keyword && state.mode === "search") {
+        feedTitle.textContent = `Hasil pencarian: "${json._original_keyword}"`;
+        feedSubtitle.textContent = `Diterjemahkan ke: ${json._translated_keyword}`;
+      }
+
       if (reset) cardGrid.innerHTML = "";
 
       if (!list.length && reset) {
@@ -311,12 +319,31 @@
     loadFeed(false);
   });
 
-  $("#refreshBtn").addEventListener("click", () => {
+  const tabDonghua = $("#tabDonghua");
+  const tabTrending = $("#tabTrending");
+
+  function setActiveTab(tab) {
+    tabDonghua.classList.toggle("is-active", tab === "donghua");
+    tabTrending.classList.toggle("is-active", tab === "trending");
+  }
+
+  tabDonghua.addEventListener("click", () => {
+    state.mode = "search";
+    state.keyword = DONGHUA_KEYWORD;
+    state.page = 1;
+    setActiveTab("donghua");
+    feedTitle.textContent = "Donghua";
+    feedSubtitle.textContent = "Postingan donghua (国漫) yang lagi ramai di Weibo";
+    loadFeed(true);
+  });
+
+  tabTrending.addEventListener("click", () => {
     state.mode = "home";
     state.page = 1;
     state.sinceId = "0";
+    setActiveTab("trending");
     feedTitle.textContent = "Sedang Trending";
-    feedSubtitle.textContent = "Postingan yang lagi ramai dibicarakan di Weibo";
+    feedSubtitle.textContent = "Postingan yang lagi ramai dibicarakan di Weibo (semua topik)";
     loadFeed(true);
   });
 
