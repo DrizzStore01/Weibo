@@ -360,8 +360,15 @@ input:focus-visible {
   align-items: flex-end;
   justify-content: space-between;
   gap: var(--sp-4);
-  margin-bottom: var(--sp-6);
+  margin-bottom: var(--sp-4);
 }
+.feed-tabs { display: flex; gap: 8px; margin-bottom: var(--sp-6); flex-wrap: wrap; }
+.feed-tab.is-active {
+  background: var(--gradient-brand);
+  color: #fff;
+  border-color: transparent;
+}
+.feed-tab.is-active:hover { background: var(--gradient-brand); }
 .feed-subtitle { color: var(--text-secondary); font-size: 15.2px; margin: 4px 0 0; }
 
 .card-grid {
