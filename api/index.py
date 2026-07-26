@@ -5,6 +5,7 @@ Backend Flask tipis yang men-serve halaman + jadi proxy ke API pihak ketiga
 API key/endpoint asli tidak perlu diekspos langsung ke client.
 """
 import os
+import re
 import requests
 from flask import Flask, jsonify, render_template, request, Response
 from urllib.parse import urlparse
@@ -32,6 +33,31 @@ UPSTREAM_HEADERS = {
     "Referer": "https://m.weibo.cn/",
     "Accept": "application/json, text/plain, */*",
 }
+
+
+CJK_RE = re.compile(r"[\u4e00-\u9fff]")
+TRANSLATE_TIMEOUT = 6  # detik
+
+
+def translate_to_chinese(text):
+    """
+    Terjemahkan teks (asumsi bahasa Indonesia) ke Mandarin lewat MyMemory
+    (API gratis, tanpa API key, cocok untuk pemakaian personal skala kecil).
+    Kalau gagal/timeout, kembalikan teks aslinya apa adanya (fallback aman —
+    pencarian tetap jalan, cuma kemungkinan hasilnya kosong).
+    """
+    try:
+        r = requests.get(
+            "https://api.mymemory.translated.net/get",
+            params={"q": text, "langpair": "id|zh-CN"},
+            timeout=TRANSLATE_TIMEOUT,
+        )
+        r.raise_for_status()
+        data = r.json()
+        translated = (data.get("responseData") or {}).get("translatedText")
+        return translated.strip() if translated else text
+    except (requests.exceptions.RequestException, ValueError):
+        return text
 
 
 @app.route("/")
@@ -197,9 +223,12 @@ def weibo_proxy():
         keyword = request.args.get("keyword", "").strip()
         if not keyword:
             return jsonify({"ok": False, "error": "Parameter 'keyword' wajib diisi."}), 400
+        search_keyword = keyword
+        if not CJK_RE.search(keyword):
+            search_keyword = translate_to_chinese(keyword)
         payload = {
             "mode": "search",
-            "keyword": keyword,
+            "keyword": search_keyword,
             "page": request.args.get("page", "1"),
         }
     elif mode == "detail":
@@ -220,7 +249,11 @@ def weibo_proxy():
             UPSTREAM_URL, json=payload, headers=UPSTREAM_HEADERS, timeout=REQUEST_TIMEOUT
         )
         upstream.raise_for_status()
-        return jsonify(upstream.json())
+        result = upstream.json()
+        if mode == "search" and payload["keyword"] != keyword:
+            result["_original_keyword"] = keyword
+            result["_translated_keyword"] = payload["keyword"]
+        return jsonify(result)
     except requests.exceptions.Timeout:
         return jsonify({"ok": False, "error": "Server sumber terlalu lama merespons. Coba lagi."}), 504
     except requests.exceptions.HTTPError as e:
